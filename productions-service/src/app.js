@@ -7,6 +7,17 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
+// Health Check Endpoint (Agregar esto ANTES de las otras rutas)
+app.get('/health', (req, res) => {
+    res.status(200).json({
+        status: 'OK',
+        service: 'Auth Service',
+        version: '1.0.0',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime()
+    });
+});
+
 // Rutas
 app.use('/prod', productionRoutes);
 

@@ -11,6 +11,17 @@ app.use(cors());
 // Middleware para parsear JSON
 app.use(express.json());
 
+// Health Check Endpoint (Agregar esto ANTES de las otras rutas)
+app.get('/health', (req, res) => {
+    res.status(200).json({
+        status: 'OK',
+        service: 'Auth Service',
+        version: '1.0.0',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime()
+    });
+});
+
 // Rutas
 app.use('/auth', authRoutes);
 

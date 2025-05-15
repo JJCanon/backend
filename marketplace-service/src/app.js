@@ -9,6 +9,18 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+
+// Health Check Endpoint (Agregar esto ANTES de las otras rutas)
+app.get('/health', (req, res) => {
+    res.status(200).json({
+        status: 'OK',
+        service: 'Auth Service',
+        version: '1.0.0',
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime()
+    });
+});
+
 // Rutas
 app.use('/api/marketplace', offerRoutes);
 app.use('/api/marketplace', purchaseRoutes);
