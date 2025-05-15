@@ -1,119 +1,133 @@
-const pgp = require('pg-promise')();
-const bcrypt = require('bcrypt');
+// seed.js
 const db = require('./config/db');
+const bcrypt = require('bcrypt');
+const moment = require('moment');
 
-// Configuración
-const SALT_ROUNDS = 10;
-
-// Función para generar fecha aleatoria alrededor de una fecha central
-const getRandomDateAround = (centerDate, daysRange) => {
-    const randomDays = (Math.random() * daysRange * 2) - daysRange;
-    const date = new Date(centerDate);
-    date.setDate(date.getDate() + randomDays);
-    return date;
-};
-
-// Función para crear usuarios de prueba
-const createTestUsers = async () => {
-    const users = [
-        {
-            names: 'test',
-            surnames: 'user',
-            email: 'testUser@test.com',
-            password: 'testPassword01',
-            userType: 'Residencial',
-            cedulaOrNit: 1987456321
-        },
-        {
-            names: 'test2',
-            surnames: 'user2',
-            email: 'testUser2@test.com',
-            password: 'testPassword02',
-            userType: 'Residencial',
-            cedulaOrNit: 1789456123
-        }
-    ];
-
-    console.log('Creando usuarios de prueba...');
-
-    for (const user of users) {
-        // Verificar si el usuario ya existe
-        const existingUser = await db.oneOrNone('SELECT id FROM users WHERE email = $1', [user.email]);
-
-        if (!existingUser) {
-            const passwordHash = await bcrypt.hash(user.password, SALT_ROUNDS);
-            await db.none(
-                `INSERT INTO users (names, surnames, email, passwordHash, userType, cedulaOrNit)
-                 VALUES ($1, $2, $3, $4, $5, $6)`,
-                [user.names, user.surnames, user.email, passwordHash, user.userType, user.cedulaOrNit]
-            );
-            console.log(`Usuario creado: ${user.email}`);
-        } else {
-            console.log(`Usuario ya existe: ${user.email}`);
-        }
+// Datos de los usuarios a crear
+const usersToCreate = [
+    {
+        names: 'test',
+        surnames: 'user',
+        email: 'testUser@test.com',
+        password: 'testPassword01',
+        userType: 'Residencial',
+        cedulaOrNit: 1987456321
+    },
+    {
+        names: 'test2',
+        surnames: 'user2',
+        email: 'testUser2@test.com',
+        password: 'testPassword02',
+        userType: 'Residencial',
+        cedulaOrNit: 1789456123
     }
-};
+];
 
-// Función para generar datos falsos de consumo y producción
-const generateFakeData = async () => {
+// Función para generar un hash de la contraseña
+async function hashPassword(password) {
+    const saltRounds = 10;
+    return await bcrypt.hash(password, saltRounds);
+}
+
+// Función para generar datos aleatorios de consumo/producción
+function generateRandomData(startDate, endDate, count) {
+    const data = [];
+    const timeDiff = endDate - startDate;
+
+    for (let i = 0; i < count; i++) {
+        // Fecha aleatoria entre startDate y endDate
+        const randomDate = new Date(startDate.getTime() + Math.random() * timeDiff);
+
+        // Valor aleatorio entre 10 y 1000 con 2 decimales
+        const randomValue = parseFloat((Math.random() * (1000 - 10) + 10).toFixed(2));
+
+        data.push({
+            date: randomDate,
+            value: randomValue
+        });
+    }
+
+    // Ordenar los datos por fecha
+    return data.sort((a, b) => a.date - b.date);
+}
+
+// Función principal
+async function seedDatabase() {
     try {
-        // Crear usuarios primero
-        await createTestUsers();
+        // Primero eliminar datos existentes para evitar duplicados
+        await db.none('DELETE FROM consumptions');
+        await db.none('DELETE FROM productions');
+        await db.none('DELETE FROM users WHERE email IN ($1, $2)',
+            [usersToCreate[0].email, usersToCreate[1].email]);
 
-        // Obtener IDs de usuarios de prueba
-        const userIds = await db.many('SELECT id FROM users WHERE email IN ($1, $2)',
-            ['testUser@test.com', 'testUser2@test.com']);
+        // Crear usuarios
+        const createdUsers = [];
+        for (const userData of usersToCreate) {
+            const passwordHash = await hashPassword(userData.password);
 
-        // Fechas centrales para concentrar datos
-        const centerDate1 = new Date('2025-01-22');
-        const centerDate2 = new Date('2025-05-06');
-        const daysRange = 3;
-
-        // Datos para consumptions (50 registros)
-        console.log('Generando 80 registros de consumo...');
-        for (let i = 0; i < 80; i++) {
-            const userIndex = Math.floor(Math.random() * userIds.length);
-            const userId = userIds[userIndex].id;
-            const consumptionValue = (Math.random() * (100 - 10) + 10).toFixed(2);
-
-            const centerDate = i % 2 === 0 ? centerDate1 : centerDate2;
-            const consumptionDate = getRandomDateAround(centerDate, daysRange);
-
-            await db.none(
-                `INSERT INTO consumptions (userId, consumptionValue, consumptionDate)
-                 VALUES ($1, $2, $3)`,
-                [userId, consumptionValue, consumptionDate]
+            const result = await db.one(
+                `INSERT INTO users (names, surnames, email, passwordHash, userType, cedulaOrNit)
+                 VALUES ($1, $2, $3, $4, $5, $6)
+                 RETURNING id`,
+                [
+                    userData.names,
+                    userData.surnames,
+                    userData.email,
+                    passwordHash,
+                    userData.userType,
+                    userData.cedulaOrNit
+                ]
             );
+
+            createdUsers.push({ id: result.id, ...userData });
         }
 
-        // Datos para productions (50 registros)
-        console.log('Generando 80 registros de producción...');
-        for (let i = 0; i < 80; i++) {
-            const userIndex = Math.floor(Math.random() * userIds.length);
-            const userId = userIds[userIndex].id;
-            const productionValue = (Math.random() * (200 - 50) + 50).toFixed(2);
+        console.log('Usuarios creados exitosamente');
 
-            const centerDate = i % 2 === 0 ? centerDate1 : centerDate2;
-            const productionDate = getRandomDateAround(centerDate, daysRange);
+        // Definir rango de fechas (20 de enero a 15 de mayo)
+        const startDate = new Date('2024-01-20');
+        const endDate = new Date('2024-05-15');
 
-            await db.none(
-                `INSERT INTO productions (userId, productionValue, productionDate)
-                 VALUES ($1, $2, $3)`,
-                [userId, productionValue, productionDate]
-            );
+        // Para cada usuario, crear consumos y producciones
+        for (const user of createdUsers) {
+            console.log(`Generando datos para usuario ${user.names} (ID: ${user.id})...`);
+
+            // Generar 80 consumos
+            const consumptions = generateRandomData(startDate, endDate, 80);
+            for (const consumption of consumptions) {
+                await db.none(
+                    `INSERT INTO consumptions (userId, consumptionValue, consumptionDate)
+                     VALUES ($1, $2, $3)`,
+                    [
+                        user.id,
+                        consumption.value,
+                        moment(consumption.date).format('YYYY-MM-DD HH:mm:ss')
+                    ]
+                );
+            }
+
+            // Generar 80 producciones
+            const productions = generateRandomData(startDate, endDate, 80);
+            for (const production of productions) {
+                await db.none(
+                    `INSERT INTO productions (userId, productionValue, productionDate)
+                     VALUES ($1, $2, $3)`,
+                    [
+                        user.id,
+                        production.value,
+                        moment(production.date).format('YYYY-MM-DD HH:mm:ss')
+                    ]
+                );
+            }
+
+            console.log(`Datos generados para usuario ${user.names}`);
         }
 
-        console.log('Datos insertados correctamente:');
-        console.log('- 2 usuarios de prueba creados');
-        console.log('- 50 registros de consumo');
-        console.log('- 50 registros de producción');
-
+        console.log('Proceso completado exitosamente');
     } catch (error) {
-        console.error('Error al insertar datos:', error);
-    } finally {
-        pgp.end();
+        console.error('Error durante la ejecución:', error);
     }
-};
+}
 
-// Ejecutar
-generateFakeData();
+// Ejecutar el script
+seedDatabase();
